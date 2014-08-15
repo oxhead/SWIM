@@ -3,23 +3,23 @@
 <configuration>
    <property>
      <name>test.randomwrite.min_key</name>
-     <value>10</value>
+     <value>1</value>
    </property>
    <property>
      <name>test.randomwrite.max_key</name>
-     <value>10</value>
+     <value>100</value>
    </property>
    <property>
      <name>test.randomwrite.min_value</name>
-     <value>90</value>
+     <value>1</value>
    </property>
    <property>
      <name>test.randomwrite.max_value</name>
-     <value>90</value>
+     <value>10000</value>
    </property>
    <property>
      <name>test.randomwrite.total_bytes</name>
-     <value>4294967296</value>
+     <value>67108864000</value>
    </property>
    <property>
      <name>test.randomwrite.bytes_per_map</name>

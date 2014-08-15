@@ -41,6 +41,8 @@ public class GenerateReplayScript {
 	    array = s.split("\t");
 	    try {
 		columnIndex = 0;
+                System.out.println(String.format("job=%s, input=%s, shuffle=%s, output=%s", rowIndex, array[3], array[4], array[5]));
+
 		while (columnIndex < array.length) {
 		    if (columnIndex == 0) {
 			data.add(rowIndex,new ArrayList<String>());
@@ -80,8 +82,10 @@ public class GenerateReplayScript {
 				   long totalDataPerReduce, 
 				   String workloadOutputDir,
 				   String hadoopCommand,
+                                   String hadoopConf,
 				   String pathToWorkGenJar,
-				   String pathToWorkGenConf) throws Exception {
+				   String pathToWorkGenConf,
+                                   int partialSize) throws Exception {
 	
 
 	if (workloadData.size() > 0) {
@@ -97,6 +101,8 @@ public class GenerateReplayScript {
 	    runAllJobs.write(toWrite.toCharArray(), 0, toWrite.length());
 	    toWrite = "mkdir " + workloadOutputDir + "\n";
             runAllJobs.write(toWrite.toCharArray(), 0, toWrite.length());
+            toWrite = "( for (( i=0; i< 100; i++)); do sleep 1800; " + hadoopCommand + " --config " + hadoopConf + " dfs -rm -r `" + hadoopCommand + " --config " + hadoopConf + "  dfs -ls /workGenOutput*/_SUCCESS | grep _SUCCESS | tr -s ' '  | cut -d' ' -f8 | cut -d'_' -f1`; done & )\n";
+            runAllJobs.write(toWrite.toCharArray(), 0, toWrite.length());
 
 	    System.out.println();
 	    System.out.println(workloadData.size() + " jobs in the workload.");
@@ -105,8 +111,11 @@ public class GenerateReplayScript {
 
 	    int written = 0;
 	    
+	    int pickNum = partialSize > workloadData.size()? 0 : new java.util.Random().nextInt(workloadData.size()-partialSize);
 	    for (int i=0; i<workloadData.size(); i++) {
-
+                if (i < pickNum || i >= (pickNum + partialSize)) {
+                    continue;
+                }
 		long sleep   = Long.parseLong(workloadData.get(i).get(INTER_JOB_SLEEP_TIME));
 		long input   = Long.parseLong(workloadData.get(i).get(INPUT_DATA_SIZE));
 		long shuffle = Long.parseLong(workloadData.get(i).get(SHUFFLE_DATA_SIZE));
@@ -144,6 +153,7 @@ public class GenerateReplayScript {
 			    System.err.println("Total data size is " + (((long) inputPartitionSize) * ((long) inputPartitionCount)) + " bytes < " + input + " bytes.");
 			    System.err.println("Need to generate a larger input data set.");
 			    System.err.println();
+                            System.out.println("* " + inputPartitionSamples.size() + ", " + inputPartitionCount);
                             throw new Exception("Input data set not large enough. Need to generate a larger data set."); 
 			    // if exception thrown here, input set not large enough - generate bigger input set
                         }
@@ -173,34 +183,42 @@ public class GenerateReplayScript {
 		float SIRatio = ((float) shuffle) / ((float) input  );
                 float OSRatio = ((float) output ) / ((float) shuffle);
 
+                int numMaps = inputPartitionSamples.size();
 		long numReduces = -1;
 
 		if (totalDataPerReduce > 0) {
 		    numReduces = Math.round((shuffle + output) / ((double) totalDataPerReduce));
 		    if (numReduces < 1) numReduces = 1;
-		    if (numReduces > clusterSizeWorkload) numReduces = clusterSizeWorkload / 5;
+		    //if (numReduces > clusterSizeWorkload) numReduces = clusterSizeWorkload / 5;
+                    int reduceMemory = 1024 + (int)((numMaps * SIRatio) / numReduces / 16)  * 512;
+                    System.out.println(String.format("numMap=%s, numReduce=%s, mapRatio=%s, reduceRatio=%s, input=%s, required=%s, memory=%s", numMaps, numReduces, SIRatio, OSRatio, numMaps * SIRatio, (int)((numMaps * SIRatio) / numReduces / 16), reduceMemory));
+                    //System.out.println(String.format("job=%s, numReduces=%s, reduceMemory=%s, shuffle=%s, output=%s, perReduce=%s", i, numReduces, reduceMemory, shuffle, output, totalDataPerReduce));
+                    String jobName = String.format("workGen_%s_m%s_r%s_i%.4f_o%.4f", i, inputPartitionSamples.size(), numReduces, SIRatio, OSRatio);
 		    toWrite =
-                        "" + hadoopCommand + " jar " + pathToWorkGenJar + " org.apache.hadoop.examples.WorkGen -conf " + pathToWorkGenConf + " " +
-                        "-r " + numReduces + " " + inputPath + " " + outputPath + " " + SIRatio + " " + OSRatio +
+                        hadoopCommand + " --config " + hadoopConf + " jar " + pathToWorkGenJar + " workgen -Dmapreduce.map.memory.mb=1024 -Dmapreduce.map.memory.mb=" + reduceMemory + " -conf " + pathToWorkGenConf + " " + "-r " + numReduces + " "  + jobName + " " +  inputPath + " " + outputPath + " " + SIRatio + " " + OSRatio +
 			" >> " + workloadOutputDir + "/job-" + i + ".txt 2>> " + workloadOutputDir + "/job-" + i + ".txt \n";
 		} else {
+                    String jobName = String.format("workGen_%s_m%s_r0_i%.4f_o%.4f", i, inputPartitionSamples.size(), SIRatio, OSRatio);
 		    toWrite = 
-			"" + hadoopCommand + " jar " + pathToWorkGenJar + " org.apache.hadoop.examples.WorkGen -conf " + pathToWorkGenConf + " " +
-			inputPath + " " + outputPath + " " + SIRatio + " " + OSRatio +
+			hadoopCommand + " --config " + hadoopConf + " jar " + pathToWorkGenJar + " workgen -Dmapreduce.map.memory.mb=1024 -Dmapreduce.map.memory.mb=1024 -conf " + pathToWorkGenConf + " " + jobName + " " + inputPath + " " + outputPath + " " + SIRatio + " " + OSRatio +
 			" >> " + workloadOutputDir + "/job-" + i + ".txt 2>> " + workloadOutputDir + "/job-" + i + ".txt \n";
 		}
 
                 FileWriter runFile = new FileWriter(scriptDirPath + "/run-job-" + i + ".sh");
-                runFile.write(toWrite.toCharArray(), 0, toWrite.length());
-                toWrite = "" + hadoopCommand + " dfs -rmr " + outputPath + "\n";
-                runFile.write(toWrite.toCharArray(), 0, toWrite.length());
+                runFile.write("echo Job" + i + ": input=" + input + ", shuffle=" + shuffle + ", output=" + output + "\n");
+                runFile.write("(" + toWrite + ") &");
+                //runFile.write("pid=\"$!\"; sleep 10; while [ `egrep \"map .*\\% reduce .*\\%\" " + workloadOutputDir + "/job-"+i+".txt > /dev/null; echo $?` -ne 0 ]; do sleep 10; done; echo $pid; kill -9 $pid\n");
+                runFile.write("pid=\"$!\"; sleep 10; while [ `egrep \"Running job\" " + workloadOutputDir + "/job-"+i+".txt > /dev/null; echo $?` -ne 0 ]; do sleep 30; done; sleep 60; echo $pid; kill -9 $pid\n");
                 toWrite = "# inputSize " + input + "\n";
-                runFile.write(toWrite.toCharArray(), 0, toWrite.length());
+                runFile.write(toWrite);
 
 		runFile.close();
 
 		// works for linux type systems only
 		Runtime.getRuntime().exec("chmod +x " + scriptDirPath + "/run-job-" + i + ".sh");
+		
+                toWrite = "echo job " + i + ": input=" + input + ", shuffle=" + shuffle + ", output=" + output + "\n";
+		runAllJobs.write(toWrite.toCharArray(), 0, toWrite.length()); 
 		
 		toWrite = "./run-job-" + i + ".sh &\n";
 		runAllJobs.write(toWrite.toCharArray(), 0, toWrite.length());
@@ -392,8 +410,10 @@ public class GenerateReplayScript {
 	    long totalDataPerReduce = Long.parseLong(args[8]);
 	    String workloadOutputDir = args[9];
 	    String hadoopCommand = args[10];
-	    String pathToWorkGenJar = args[11];
-	    String pathToWorkGenConf = args[12];
+            String hadoopConf = args[11];
+	    String pathToWorkGenJar = args[12];
+	    String pathToWorkGenConf = args[13];
+            int partialSize = Integer.parseInt(args[14]);
 
 	    // parse data
 
@@ -451,7 +471,8 @@ public class GenerateReplayScript {
 
 	    printOutput(workloadData, clusterSizeRaw, clusterSizeWorkload, 
 			inputPartitionSize, inputPartitionCount, scriptDirPath, hdfsInputDir, hdfsOutputPrefix,
-			totalDataPerReduce, workloadOutputDir, hadoopCommand, pathToWorkGenJar, pathToWorkGenConf);
+			totalDataPerReduce, workloadOutputDir, hadoopCommand, hadoopConf, pathToWorkGenJar, pathToWorkGenConf,
+                        partialSize);
 
 
 		System.out.println("Parameter values for randomwriter_conf.xsl:");

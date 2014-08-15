@@ -1,0 +1,1 @@
+java GenerateReplayScript FB-2010_samples_24_times_1hr_withInputPaths_0.tsv 3000 60  $((67108864*2)) 50000 myScript /workGenInput /workGenOutputTest $((67108864*2)) /home/chinjunh/SWIM/workloadSuite/workGenLogs ~/hadoop/bin/hadoop ~/hadoop/conf ~/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.4.1.jar ▒/home/chinjunh/SWIM/workloadSuite/workGenKeyValue_conf.xsl 30000

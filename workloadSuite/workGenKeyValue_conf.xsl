@@ -3,22 +3,22 @@
 <configuration>
    <property>
      <name>workGen.randomwrite.min_key</name>
-     <value>10</value>
+     <value>1</value>
    </property>
    <property>
      <name>workGen.randomwrite.max_key</name>
-     <value>10</value>
+     <value>10000</value>
    </property>
    <property>
      <name>workGen.randomwrite.min_value</name>
-     <value>90</value>
+     <value>1</value>
    </property>
    <property>
      <name>workGen.randomwrite.max_value</name>
-     <value>90</value>
+     <value>10000</value>
    </property>
    <property>
      <name>workGen.randomwrite.total_bytes</name>
-     <value>10737418240</value>
+     <value>67108864000</value>
    </property>
 </configuration>
